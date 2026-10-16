@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+
+autoInstallPeers: false
+
+packageExtensions:
+  '@swc/cli@0.8.1':
+    dependencies:
+      chokidar: 5.0.0
+
+allowBuilds:
+  '@biomejs/biome': true
+  '@swc/core': true
+  esbuild: true

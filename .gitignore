@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+# Private assignment-derived working documents. Keep locally; never publish.
+/docs/internal/
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+pnpm-debug.log*

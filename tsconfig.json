@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/platform" },
+    { "path": "packages/alarms" },
+    { "path": "apps/migrate" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" }
+  ]
+}

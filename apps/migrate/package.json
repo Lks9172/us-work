@@ -1,0 +1,14 @@
+{
+  "name": "@usall-backend-assignment/migrate",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "swc src -d dist --strip-leading-paths --source-maps --config-file ../../.swcrc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@usall-backend-assignment/alarms": "workspace:*",
+    "@usall-backend-assignment/platform": "workspace:*"
+  }
+}

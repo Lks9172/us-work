@@ -1,0 +1,51 @@
+{
+  "name": "usall-backend-assignment",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Durable bulk and emergency notification backend for the US Alliance assignment",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": "24.19.0",
+    "pnpm": "11.22.0"
+  },
+  "scripts": {
+    "build": "pnpm clean && pnpm typecheck && pnpm --filter './packages/*' build && pnpm --filter './apps/*' build",
+    "clean": "node scripts/clean.mjs && tsc -b --clean",
+    "dev:api": "pnpm --filter @usall-backend-assignment/api dev",
+    "dev:worker": "pnpm --filter @usall-backend-assignment/worker dev",
+    "start:api": "pnpm --filter @usall-backend-assignment/api start",
+    "start:migrate": "pnpm --filter @usall-backend-assignment/migrate start",
+    "start:worker": "pnpm --filter @usall-backend-assignment/worker start",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "check:boundaries": "depcruise --config .dependency-cruiser.cjs apps/*/src packages/*/src",
+    "typecheck": "tsc -b --pretty false --emitDeclarationOnly",
+    "test": "pnpm test:unit",
+    "test:unit": "vitest run --config vitest.unit.config.mts",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:traceability": "node scripts/validate-traceability.mjs",
+    "validate:docs": "node scripts/validate-docs.mjs",
+    "verify": "pnpm format:check && pnpm lint && pnpm check:boundaries && pnpm typecheck && pnpm test:unit && pnpm test:traceability && pnpm validate:docs && pnpm build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.9",
+    "@nestjs/cli": "11.0.24",
+    "@nestjs/common": "11.2.1",
+    "@nestjs/core": "11.2.1",
+    "@nestjs/platform-fastify": "11.2.1",
+    "@nestjs/testing": "11.2.1",
+    "@swc/cli": "0.8.1",
+    "@swc/core": "1.16.1",
+    "@types/node": "24.10.1",
+    "@types/pg": "8.15.6",
+    "dependency-cruiser": "18.2.0",
+    "fastify": "5.12.1",
+    "pg": "8.16.3",
+    "reflect-metadata": "0.2.2",
+    "redis": "6.3.0",
+    "rxjs": "7.8.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
