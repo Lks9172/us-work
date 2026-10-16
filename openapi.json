@@ -1,0 +1,508 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "US Alliance Alarm API",
+    "version": "1.0.0",
+    "description": "Create, start, cancel, and inspect bulk and emergency alarms. Sending is asynchronous. Responses are JSON and response Accept negotiation is intentionally not enabled: an unsupported Accept value does not produce 406. Nest/Fastify reports both unknown paths and unregistered methods as 404 rather than 405. Alarm creation accepts only application/json and reports other request media as 415."
+  },
+  "servers": [{ "url": "http://localhost:3000" }],
+  "tags": [{ "name": "Alarms" }, { "name": "Health" }, { "name": "Docs" }],
+  "paths": {
+    "/docs": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Open the interactive Swagger UI",
+        "description": "The UI loads this repository's canonical /docs/openapi.json document. Compose binds the API to localhost; public deployment requires gateway controls.",
+        "operationId": "getSwaggerUi",
+        "responses": {
+          "200": {
+            "description": "Swagger UI HTML",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/docs/openapi.json": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Read the canonical OpenAPI document",
+        "operationId": "getOpenApiDocument",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.0 document",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/v1/alarms": {
+      "post": {
+        "tags": ["Alarms"],
+        "summary": "Create an alarm",
+        "operationId": "createAlarm",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAlarmRequest" },
+              "examples": {
+                "bulk": {
+                  "value": {
+                    "type": "BULK",
+                    "title": "Service notice",
+                    "body": "Maintenance starts at 02:00."
+                  }
+                },
+                "emergency": {
+                  "value": {
+                    "type": "EMERGENCY",
+                    "title": "Payment authorization",
+                    "body": "Approve the payment now.",
+                    "recipientIds": ["u_000001", "u_000002"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": { "Location": { "$ref": "#/components/headers/Location" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Alarm" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "413": { "$ref": "#/components/responses/PayloadTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "get": {
+        "tags": ["Alarms"],
+        "summary": "List alarms using signed keyset pagination",
+        "operationId": "listAlarms",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque signed cursor returned by the previous page.",
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/AlarmStatus" }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/AlarmType" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of alarms",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AlarmList" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/alarms/{alarmId}": {
+      "get": {
+        "tags": ["Alarms"],
+        "summary": "Get one alarm",
+        "operationId": "getAlarm",
+        "parameters": [{ "$ref": "#/components/parameters/AlarmId" }],
+        "responses": {
+          "200": {
+            "description": "Alarm snapshot",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Alarm" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/alarms/{alarmId}/send": {
+      "post": {
+        "tags": ["Alarms"],
+        "summary": "Start asynchronous sending",
+        "description": "Repeated requests while the same alarm is active are idempotent.",
+        "operationId": "startAlarm",
+        "parameters": [{ "$ref": "#/components/parameters/AlarmId" }],
+        "responses": {
+          "202": {
+            "description": "Start accepted or already active",
+            "headers": { "Location": { "$ref": "#/components/headers/Location" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Alarm" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/alarms/{alarmId}/cancel": {
+      "post": {
+        "tags": ["Alarms"],
+        "summary": "Request cancellation",
+        "description": "Cancellation stops new attempts. A request already durably marked STARTED may still complete and is reconciled without blind retry.",
+        "operationId": "cancelAlarm",
+        "parameters": [{ "$ref": "#/components/parameters/AlarmId" }],
+        "responses": {
+          "202": {
+            "description": "Cancellation accepted or already requested/canceled",
+            "headers": { "Location": { "$ref": "#/components/headers/Location" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Alarm" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Process liveness",
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "description": "Process is alive",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "API database readiness",
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "description": "API is ready",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AlarmId": {
+        "name": "alarmId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "headers": {
+      "Location": {
+        "description": "Canonical alarm resource path.",
+        "schema": { "type": "string", "example": "/v1/alarms/4ba646af-219d-4a92-aa75-2cfcb19874ef" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed JSON, path, or cursor syntax",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Request body exceeds 131,072 bytes",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "Alarm creation requires application/json",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Semantically invalid body or query",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "NotFound": {
+        "description": "Alarm does not exist",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "Conflict": {
+        "description": "Command is not legal in the current terminal state",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "InternalServerError": {
+        "description": "An unexpected internal error prevented the request from completing",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Required persistence is unavailable",
+        "content": {
+          "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } }
+        }
+      }
+    },
+    "schemas": {
+      "AlarmType": { "type": "string", "enum": ["BULK", "EMERGENCY"] },
+      "AlarmStatus": {
+        "type": "string",
+        "enum": [
+          "CREATED",
+          "QUEUED",
+          "EXPANDING",
+          "SENDING",
+          "CANCEL_REQUESTED",
+          "CANCELED",
+          "COMPLETED",
+          "PARTIALLY_FAILED",
+          "FAILED",
+          "ATTENTION_REQUIRED"
+        ]
+      },
+      "BulkAlarmRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "body"],
+        "properties": {
+          "type": { "type": "string", "enum": ["BULK"] },
+          "title": {
+            "type": "string",
+            "description": "Trimmed before validation and storage; the normalized value contains 1 to 200 Unicode code points.",
+            "x-normalization": "trim",
+            "x-normalized-minLength": 1,
+            "x-normalized-maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Preserved exactly and must contain at least one non-whitespace code point.",
+            "x-reject-whitespace-only": true
+          }
+        }
+      },
+      "EmergencyAlarmRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "body", "recipientIds"],
+        "properties": {
+          "type": { "type": "string", "enum": ["EMERGENCY"] },
+          "title": {
+            "type": "string",
+            "description": "Trimmed before validation and storage; the normalized value contains 1 to 200 Unicode code points.",
+            "x-normalization": "trim",
+            "x-normalized-minLength": 1,
+            "x-normalized-maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Preserved exactly and must contain at least one non-whitespace code point.",
+            "x-reject-whitespace-only": true
+          },
+          "recipientIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Opaque ID preserved without trim, case folding, or Unicode normalization; edge whitespace is rejected.",
+              "x-normalization": "none",
+              "x-reject-edge-whitespace": true
+            }
+          }
+        }
+      },
+      "CreateAlarmRequest": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/BulkAlarmRequest" },
+          { "$ref": "#/components/schemas/EmergencyAlarmRequest" }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "BULK": "#/components/schemas/BulkAlarmRequest",
+            "EMERGENCY": "#/components/schemas/EmergencyAlarmRequest"
+          }
+        }
+      },
+      "IncidentCodeCount": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "count"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "LATE_PROVIDER_RECIPIENT_MISMATCH",
+              "LATE_PROVIDER_EVIDENCE_CONFLICT",
+              "LATE_DISTINCT_DUPLICATE",
+              "LATE_POSITIVE_AFTER_FAILED",
+              "LATE_POSITIVE_AFTER_CANCELED"
+            ]
+          },
+          "count": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "IncidentSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["count", "codes", "firstDetectedAt", "lastDetectedAt"],
+        "properties": {
+          "count": { "type": "integer", "minimum": 0 },
+          "codes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IncidentCodeCount" }
+          },
+          "firstDetectedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "lastDetectedAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "Alarm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "title",
+          "body",
+          "status",
+          "failureCode",
+          "materializedCount",
+          "total",
+          "sent",
+          "failed",
+          "canceled",
+          "active",
+          "unresolved",
+          "duplicateCount",
+          "incidentCount",
+          "incidentSummary",
+          "audienceFinalizedAt",
+          "expansionCompletedAt",
+          "finishedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "$ref": "#/components/schemas/AlarmType" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "body": { "type": "string", "minLength": 1, "maxLength": 5000 },
+          "status": { "$ref": "#/components/schemas/AlarmStatus" },
+          "failureCode": { "type": "string", "nullable": true },
+          "materializedCount": { "type": "integer", "minimum": 0 },
+          "total": { "type": "integer", "minimum": 0, "nullable": true },
+          "sent": { "type": "integer", "minimum": 0 },
+          "failed": { "type": "integer", "minimum": 0 },
+          "canceled": { "type": "integer", "minimum": 0 },
+          "active": { "type": "integer", "minimum": 0 },
+          "unresolved": { "type": "integer", "minimum": 0 },
+          "duplicateCount": { "type": "integer", "minimum": 0 },
+          "incidentCount": { "type": "integer", "minimum": 0 },
+          "incidentSummary": { "$ref": "#/components/schemas/IncidentSummary" },
+          "audienceFinalizedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "expansionCompletedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "finishedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AlarmList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["alarms", "nextCursor"],
+        "properties": {
+          "alarms": { "type": "array", "items": { "$ref": "#/components/schemas/Alarm" } },
+          "nextCursor": { "type": "string", "nullable": true }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["field", "code"],
+        "properties": {
+          "field": { "type": "string" },
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "status", "code", "detail", "instance", "traceId"],
+        "properties": {
+          "type": { "type": "string", "example": "about:blank" },
+          "title": { "type": "string" },
+          "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+          "code": { "type": "string", "example": "INVALID_ALARM" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" },
+          "traceId": { "type": "string" },
+          "errors": { "type": "array", "items": { "$ref": "#/components/schemas/ValidationError" } }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok"],
+        "properties": { "ok": { "type": "boolean", "enum": [true] } }
+      }
+    }
+  }
+}
