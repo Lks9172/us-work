@@ -1,0 +1,116 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-usall_assignment}
+      POSTGRES_USER: ${POSTGRES_USER:-usall}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-usall_local}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis-data:/data
+
+  mock:
+    image: ghcr.io/us-all/backend-assignment-api:1.2
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/health').then(async r=>{const b=await r.json();if(r.status!==200||b.ok!==true)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+    command: ["node", "apps/migrate/dist/main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-usall}:${POSTGRES_PASSWORD:-usall_local}@postgres:5432/${POSTGRES_DB:-usall_assignment}
+      MIGRATIONS_DIR: /workspace/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-usall}:${POSTGRES_PASSWORD:-usall_local}@postgres:5432/${POSTGRES_DB:-usall_assignment}
+      CURSOR_SIGNING_KEY: ${CURSOR_SIGNING_KEY:-local-cursor-signing-key-change-me}
+      REDIS_URL: redis://redis:6379
+      PROVIDER_BASE_URL: http://mock:4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health/ready').then(async r=>{const b=await r.json();if(r.status!==200||b.ok!==true)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - 127.0.0.1:${API_PORT:-3000}:3000
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+    command: ["node", "apps/worker/dist/src/main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-usall}:${POSTGRES_PASSWORD:-usall_local}@postgres:5432/${POSTGRES_DB:-usall_assignment}
+      REDIS_URL: redis://redis:6379
+      PROVIDER_BASE_URL: http://mock:4000
+      PROVIDER_HISTORY_VISIBILITY: ${PROVIDER_HISTORY_VISIBILITY:-OPAQUE}
+      PROVIDER_HISTORY_AUTHORITATIVE_EMPTY_GRACE_MS: ${PROVIDER_HISTORY_AUTHORITATIVE_EMPTY_GRACE_MS:-30000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 3
+    stop_grace_period: 45s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

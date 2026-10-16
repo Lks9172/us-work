@@ -1,0 +1,50 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.22.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Verify source, tests, and requirements traceability
+        run: pnpm verify
+      - run: docker compose config --quiet
+      - run: docker build --check .
+      - name: Build production image
+        run: docker build --tag usall-backend-assignment:ci .
+      - name: Inspect production image contents
+        run: |
+          docker run --rm --entrypoint sh usall-backend-assignment:ci -c \
+            'test ! -e /workspace/docs && test ! -e /workspace/tests && test ! -e /workspace/apps/api/src && test ! -e /workspace/node_modules/.bin/nest'
+      - name: Smoke-test full Compose runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            docker compose -p usall-ci-smoke down --volumes >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker compose -p usall-ci-smoke up --detach --wait --wait-timeout 180
+          curl --fail --silent http://127.0.0.1:3000/health/ready >/dev/null
+          test "$(docker ps \
+            --filter label=com.docker.compose.project=usall-ci-smoke \
+            --filter label=com.docker.compose.service=worker \
+            --filter status=running --quiet | wc -l)" -eq 3
