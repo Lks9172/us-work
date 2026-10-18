@@ -319,7 +319,7 @@ the listed requirement or problem, not that the candidate is universally invalid
 | D8 / ADR-11 | `R-USERS-02`, `R-DATA-01`, `R-CONC-01`: O(1), transactionally consistent detail reads | Query-time counts meet single-source simplicity but miss bounded 100,000-row reads. Async projection meets fast reads but misses strong consistency. Same-transaction counters meet both, with one Alarm-row contention point. | Stored counters plus read-only drift detection. |
 | D9 / ADR-15 | `R-DATA-01`, `R-CONC-01`, `R-DEDUP-01`: expose late contradictory evidence without rewriting history | Rewriting terminal results meets “latest observation” but misses audit monotonicity. Log-only handling preserves results but misses API-visible risk. A sticky incident projection meets both preservation and visibility, with a more complex status model. | Preserve result; add monotonic incident projection. |
 | D10 / ADR-17 | `R-PROD-01`, `R-README-01`, `R-CONF-01`: PII-safe multi-worker operations | Free-form logs meet zero setup but miss schema/PII/correlation guarantees. A mandatory metrics/tracing stack meets aggregation but adds a new topology and failure contract. Typed JSON events plus one advisory-lock snapshot leader meet testable signals without an availability dependency, but not alert delivery or distributed traces. | Typed NDJSON events and leader-owned snapshots. |
-| D11 / ADR-16 | `R-PROD-01`, `R-CONC-01`: survive DB connection events without false success | No listener delegates recovery to restart and misses process continuity. A Pool-only listener misses checked-out transaction clients. Pool plus scoped client listeners meet EventEmitter safety while preserving query rejection/rollback. | Handle both event sources; never swallow query failure. |
+| D11 / ADR-16 | `R-PROD-01`, `R-CONC-01`, `R-USERS-02`: survive DB connection events and established-socket stalls without false success or aborting valid 100k publication | No timeout misses bounded shutdown. One uniform 5s timeout bounds stalls but misses the measured 6.09s 100k publication. Role-specific 5s routine/30s expansion budgets plus 5s lock/rollback bounds meet both, while pool+scoped listeners cover idle and checked-out client events. | Handle both event sources, apply workload-specific bounds, destroy every failed transaction client, and never swallow query failure. |
 | D12 / ADR-18 | `R-CONC-01`, `R-AMB-01`, `R-DEDUP-01`: late positive versus redispatch race | Letting retry win meets progress but misses duplicate minimization. Append-and-scan preserves evidence but misses the pre-scan re-POST window. Adoption under the dispatch lock meets the linearization need; an already committed duplicate remains irreversible and is recorded. | Consume positive evidence at the Alarm→Delivery→Attempt lock. |
 | D13 / ADR-19 | `R-OAS-01`, `R-API-01`, `R-ERROR-01`: one API-contract authority | A repository file meets submission but misses runtime discovery. Runtime decorator generation meets discovery but creates a second source. Serving the validated checked-in bytes meets both, with CDN-only UI assets as a deployment cost. | Serve canonical `openapi.json` directly. |
 | D14 / ADR-20 | `R-PROD-01`, `R-CONC-01`: avoid outage retry storms without slow recovery | Immediate/fixed-short retry meets fast recovery but misses bounded dependency pressure. Unbounded exponential meets pressure control but misses bounded recovery latency. Abortable 250ms–5s exponential meets both bounds, though replicas may still synchronize. | Shared abortable bounded exponential backoff. |
@@ -468,19 +468,25 @@ adoption decision is independently recorded in
 - Revisit when: an OpenTelemetry collector is part of the deployment contract; keep the application
   port and replace or fan out the sink with sampled traces and metrics.
 
-### D11. Contain PostgreSQL connection events without hiding query failure
+### D11. Bound PostgreSQL stalls without hiding query failure
 
-- Candidates: allow driver error events to terminate the process; handle only idle pool errors;
-  handle pool errors and attach a scoped listener to each checked-out transaction client.
-- Chosen: handle both idle and active-client events, while preserving ordinary query rejection and
-  transaction rollback.
-- Rationale: a database restart can emit `error` from either object. Handling only the pool still
-  leaves an active transaction able to crash a worker, while treating the event as a successful
-  operation would violate state-machine safety.
-- Cost: every transaction has a small listener lifecycle and connection loss still reduces
-  availability until PostgreSQL recovers.
-- Revisit when: the database driver guarantees one centralized, non-fatal error channel with the
-  same checked-out-client semantics.
+- Candidates: leave query/lock waits unbounded; apply one uniform 5-second budget; or combine idle
+  pool and checked-out-client error listeners with workload-specific query budgets. Unbounded waits
+  preserve arbitrarily slow work but miss bounded API/worker shutdown after an established socket
+  stalls. A uniform 5-second budget meets the stall bound but misses the measured 6.09-second
+  100,000-recipient set-based publication.
+- Chosen: handle both idle and active-client events; use 5-second query/statement bounds for
+  API, dispatch, maintenance, and reconciliation, a 30-second query/statement bound for expansion,
+  and a 5-second lock bound everywhere. Best-effort rollback waiting is capped at 5 seconds and a
+  client from any failed transaction is destroyed instead of returned to the pool.
+- Rationale: a database restart or network blackhole can affect either an idle pool client or a
+  checked-out transaction. Role-specific bounds preserve the measured 100k operation while making
+  routine control-plane and recovery work fail promptly into existing retry/lease paths. Destroying
+  the failed session prevents an uncertain transaction/protocol state from contaminating later work.
+- Cost: a valid expansion query exceeding 30 seconds fails and relies on stable staging plus fenced
+  takeover; failed business commands also discard their session, adding reconnect cost.
+- Revisit when: production 100k publication approaches the 30-second budget or the driver provides
+  an abortable transaction API that proves session reuse safe after timeout.
 
 ### D12. Resolve same-attempt retry/positive races at the dispatch lock
 
@@ -679,7 +685,7 @@ clean-clone index.
 | ADR-13 HTTP send phase | `RET-17`, `RL-01~06`, `RL-08`, `RL-11`, `MCK-11`, `MCK-24~25` |
 | ADR-14 timing/retry | `RET-02~05`, `RET-07~08`, `RET-10~18`, `RET-20~21`, `LF-05` |
 | ADR-15 terminal incident projection | `AGG-16~19`, `LF-04`, `RET-14`, `RET-21`, `RET-23` |
-| ADR-16 PostgreSQL connection events | `DB-12`, `OPS-15` |
+| ADR-16 PostgreSQL stall/error isolation | `DB-12`, `OPS-15` |
 | ADR-17 PII-safe observability | `OBS-01` |
 | ADR-18 retry/positive race | `RET-10`, `RET-17`, `RET-20`, `RET-23`, `AGG-10`, `AGG-17~19` |
 | ADR-19 OpenAPI authority | `DOC-01~06` |

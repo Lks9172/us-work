@@ -72,7 +72,7 @@
       "sourceSummary": "Design for concurrent requests, failures, restart, and operational recovery.",
       "sourcePriority": "P0-source",
       "scope": "runtime",
-      "interpretation": "Durable database work, fenced leases, bounded retries, fail-closed dependencies, and explicit ambiguity states define production behavior.",
+      "interpretation": "Durable database work, fenced leases, workload-specific database timeouts, bounded retries, fail-closed dependencies, and explicit ambiguity states define production behavior.",
       "designDecisionIds": [
         "ADR-01",
         "ADR-02",
@@ -92,6 +92,10 @@
       "implementationArtifacts": [
         "apps/worker/src/worker.module.ts",
         "packages/alarms/src/infrastructure/persistence/dispatch-runtime.ts",
+        "packages/alarms/src/infrastructure/persistence/expansion-runtime.ts",
+        "packages/alarms/src/infrastructure/persistence/postgres-alarm-runtime.ts",
+        "packages/alarms/src/infrastructure/persistence/reconciliation-runtime.ts",
+        "packages/alarms/src/infrastructure/persistence/postgres-transaction-cleanup.ts",
         "docker-compose.yml"
       ],
       "invariant": "A detected dependency failure never falls back to an unfenced send path.",
@@ -393,7 +397,8 @@
       "implementationArtifacts": [
         "packages/alarms/src/infrastructure/persistence/postgres-dispatch-repository.ts",
         "packages/alarms/src/infrastructure/persistence/postgres-maintenance-repository.ts",
-        "packages/alarms/src/infrastructure/persistence/postgres-reconciliation-repository.ts"
+        "packages/alarms/src/infrastructure/persistence/postgres-reconciliation-repository.ts",
+        "packages/alarms/src/infrastructure/persistence/postgres-transaction-cleanup.ts"
       ],
       "invariant": "Only the current lease generation and token may mutate a claimed unit of work.",
       "risk": "Stale workers can overwrite a newer result or duplicate an external effect.",
@@ -457,6 +462,8 @@
       "implementationArtifacts": [
         "vitest.unit.config.mts",
         "vitest.integration.config.mts",
+        "tests/unit/postgres-transaction-disposal.spec.ts",
+        "tests/unit/runtime-capacity-contract.spec.ts",
         "tests/README.md"
       ],
       "invariant": "A passing narrow suite is never reported as proof for an unexecuted black-box or manual scenario.",

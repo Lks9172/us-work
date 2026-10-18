@@ -12,8 +12,10 @@ The public manifest at `docs/requirements-traceability.json` inventories all 260
 scenarios (218 source-required and 42 project-promoted). The gate validates independent design,
 implementation, and verification states; existing implementation paths; executable metadata for
 automated IDs; complete non-automated owner/evidence/blocker fields; and orphan-free test coverage.
-Recorded runtime snapshots remain `partial` until they are rerun on the settled current tree, while
-external submission work and the known official-Mock dependency deviation have distinct statuses.
+Runtime evidence records its source provenance instead of treating every older snapshot as current.
+The 100,000-recipient soak matches the current source fingerprint; exact multi-worker evidence is
+identified separately because PostgreSQL wait/disposal code changed after that run. External
+submission work and the known official-Mock dependency deviation retain distinct statuses.
 The manifest contains no private local evidence paths.
 When the private internal catalog exists, the gate also performs a strict ID/priority/count
 cross-check and prints `catalogSource=internal-catalog`. A real public clone intentionally has no
@@ -35,10 +37,9 @@ readiness/lifecycle JSON, and the business-neutral worker delay. A test-only, gu
 oracle enumerates every conceptual state/event pair and drives reproducible seeded event sequences;
 it is deliberately not imported by production code or presented as a second runtime state machine.
 
-Latest current-tree host regression: 31 files and 358 tests passed on Node 22.22.2. The earlier
-22-file/306-test tree passed in the pinned Node 24.19 build image; the current observability and
-public-clone traceability delta still needs the final pinned-image gate and does not claim that
-evidence early.
+Latest current-tree pinned-runtime regression: Node 24.19.0 `pnpm verify` passed all format, lint,
+architecture-boundary, typecheck, documentation, build, traceability, and unit/contract gates. The
+unit/contract portion contains 32 files and 368 tests.
 
 ## PostgreSQL, Redis, and HTTP integration suite
 
@@ -90,23 +91,28 @@ process-clock offsets of -10/0/+10 seconds, and measures the real cancel API wit
 and 2,000 durable STARTED attempts. Set `PERF_AUDIT_LOG=1` for local plan and timing diagnostics;
 measured values are environment evidence, not portable production guarantees.
 
-The separate local 100,000-recipient runtime gate traverses the real users pages and combines a
-committed-checkpoint worker kill, exact publication, cleanup-transaction kill/takeover, V8
-heap/PostgreSQL pool/API-latency sampling, live scale from one to three workers, and bounded cancel
-convergence. A current exact process-kill matrix additionally stops dedicated workers with `SIGKILL`
-before and after the first, middle, and last cleanup batch commits, and before and after a cancel
-batch commit. It verifies transaction rollback versus durable commit, cleanup-lease takeover, and
-exact 100,000-row terminal counters without inferring those facts from exception-only failpoints.
-The completed reference sample preserved 43,000 staged recipients and zero Deliveries
-at the checkpoint kill, published exactly 100,000, cleaned staging to zero after takeover, observed
-API p99 8.360ms and worker heap peaks below 45MiB, and finished cancel with no active or STARTED
-work. A repeated V8-inspector diagnostic coincided with many misses of the 5ms permit-lateness
-boundary, without proving instrumentation was the sole cause, so runtime throughput numbers remain
-local diagnostic evidence rather than a CI or production SLO.
+The current-source 100,000-recipient runtime gate traversed real paged users, held the durable queue
+with zero workers, scaled to three workers, and issued 20 worker kill/restarts. It completed in
+42m43s with `100000/100000` sent. PostgreSQL, provider ingress, and provider history contained the
+same exact 100,000 recipients; duplicate, repost, unresolved, unfinished, deadlock, 429, and rolling
+one-second violations were all zero. The ingress window peaked at 45 requests. This rate proof used
+a controlled Mock that records authoritative receipt timestamps because the supplied Mock does not
+expose them. The source fingerprint (`a2233a89...ce0b`, 168 files, 1,520,108 bytes) matched the
+executed tree. Clean throughput of 37.65/s and permit-to-STARTED p99 of 108.033ms missed separate
+local diagnostic targets of 38/s and 40ms; neither is an assignment limit or provider-cap violation.
 
-Final current-tree integration/E2E regression: 17 files and 224 tests passed twice on the Node 22
-host. The settled current tree does not claim a pinned Node 24.19 integration result until that
-separate final gate completes.
+The exact multi-worker matrix separately passed scale out/in at worker counts 1, 2, 3, and 5 with
+rolling maxima 41, 42, 41, and 43 and no violation. Official-Mock in-flight `SIGKILL` recovery and a
+saturated BULK plus EMERGENCY-100 priority/kill scenario also passed with no priority violation. This
+matrix predates only the later PostgreSQL query-wait and failed-client disposal hardening; dispatch
+priority, admission, fencing, and limiter anchors are unchanged, while the current-fingerprint soak
+exercised the new PostgreSQL path.
+
+The integration/E2E audit covers 17 files and 224 unique tests on the pinned Node 24.19 runtime. An
+initial aggregate run passed 220/224 while a separately running Compose maintenance leader held the
+same advisory lock. After isolating the intended PostgreSQL/Redis test services, both affected specs
+passed 22/22. This records verification of all 224 tests without misreporting it as one uninterrupted
+aggregate run.
 The high-contention RET-09 boundary case has an explicit 120-second test wall-clock allowance so a
 parallel 100,000-row planning fixture cannot abort it; its assertions and product retry/rate budgets
 are unchanged.
