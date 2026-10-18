@@ -25,6 +25,11 @@ export class ReconciliationRuntime {
     this.pool = new Pool({
       connectionString: options.databaseUrl,
       application_name: 'usall-reconciliation-worker',
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 30_000,
+      query_timeout: 5_000,
+      statement_timeout: 5_000,
+      lock_timeout: 5_000,
       max: 10,
     });
     attachPostgresPoolErrorHandler(this.pool, { component: 'reconciliation-worker' });

@@ -11,6 +11,7 @@ import type {
 } from '../../application/maintenance';
 import { evaluateEvidence, type ProviderEvidenceEntry } from '../../domain/delivery-evidence';
 import { attachPostgresClientErrorHandler } from './postgres-pool-observability';
+import { rollbackPostgresTransaction } from './postgres-transaction-cleanup';
 
 interface MaintenanceAlarmRow {
   readonly id: string;
@@ -1127,20 +1128,26 @@ export class PostgresMaintenanceRepository implements MaintenanceRepository {
     const detachErrorHandler = attachPostgresClientErrorHandler(client, {
       component: 'maintenance-repository',
     });
+    let reusable = false;
     try {
       await client.query('BEGIN');
       const result = await work(client);
       await client.query('COMMIT');
+      reusable = true;
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await rollbackPostgresTransaction(client);
       if (error instanceof PersistenceUnavailableError) {
         throw error;
       }
       throw new PersistenceUnavailableError(error);
     } finally {
-      client.release();
       detachErrorHandler();
+      if (reusable) {
+        client.release();
+      } else {
+        client.release(true);
+      }
     }
   }
 }

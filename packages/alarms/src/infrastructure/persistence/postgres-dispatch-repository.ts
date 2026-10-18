@@ -12,6 +12,7 @@ import type {
 } from '../../application/dispatch';
 import type { AlarmType } from '../../domain/alarm';
 import { attachPostgresClientErrorHandler } from './postgres-pool-observability';
+import { rollbackPostgresTransaction } from './postgres-transaction-cleanup';
 
 interface ClaimRow {
   readonly alarm_id: string;
@@ -1106,7 +1107,7 @@ export class PostgresDispatchRepository implements DispatchRepository {
       reusable = true;
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await rollbackPostgresTransaction(client);
       if (error instanceof PersistenceUnavailableError) {
         throw error;
       }

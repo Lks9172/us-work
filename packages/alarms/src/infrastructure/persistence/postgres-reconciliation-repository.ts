@@ -10,6 +10,7 @@ import type {
 } from '../../application/reconciliation';
 import { evaluateEvidence, type ProviderEvidenceEntry } from '../../domain/delivery-evidence';
 import { attachPostgresClientErrorHandler } from './postgres-pool-observability';
+import { rollbackPostgresTransaction } from './postgres-transaction-cleanup';
 
 export const HISTORY_VISIBILITY_PROFILES = ['OPAQUE', 'AUTHORITATIVE_EMPTY_AFTER_GRACE'] as const;
 export type HistoryVisibilityProfile = (typeof HISTORY_VISIBILITY_PROFILES)[number];
@@ -858,20 +859,26 @@ export class PostgresReconciliationRepository implements ReconciliationRepositor
     const detachErrorHandler = attachPostgresClientErrorHandler(client, {
       component: 'reconciliation-repository',
     });
+    let reusable = false;
     try {
       await client.query('BEGIN');
       const result = await work(client);
       await client.query('COMMIT');
+      reusable = true;
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await rollbackPostgresTransaction(client);
       if (error instanceof PersistenceUnavailableError) {
         throw error;
       }
       throw new PersistenceUnavailableError(error);
     } finally {
-      client.release();
       detachErrorHandler();
+      if (reusable) {
+        client.release();
+      } else {
+        client.release(true);
+      }
     }
   }
 }

@@ -25,6 +25,7 @@ import {
 import { decideCancel, decideStart } from '../../domain/alarm-policy';
 import { FIRST_EXPANSION_PAGE_HASH } from './expansion-cursor-hash';
 import { attachPostgresClientErrorHandler } from './postgres-pool-observability';
+import { rollbackPostgresTransaction } from './postgres-transaction-cleanup';
 
 interface AlarmRow {
   readonly id: string;
@@ -394,14 +395,16 @@ export class PostgresAlarmRepository implements AlarmRepository {
     const detachErrorHandler = attachPostgresClientErrorHandler(client, {
       component: 'alarm-repository',
     });
+    let reusable = false;
 
     try {
       await client.query('BEGIN');
       const result = await work(client);
       await client.query('COMMIT');
+      reusable = true;
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await rollbackPostgresTransaction(client);
       if (
         error instanceof AlarmNotFoundError ||
         error instanceof AlarmStateConflictError ||
@@ -412,8 +415,12 @@ export class PostgresAlarmRepository implements AlarmRepository {
 
       throw new PersistenceUnavailableError(error);
     } finally {
-      client.release();
       detachErrorHandler();
+      if (reusable) {
+        client.release();
+      } else {
+        client.release(true);
+      }
     }
   }
 }

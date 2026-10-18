@@ -20,6 +20,11 @@ export class ExpansionRuntime {
     this.pool = new Pool({
       connectionString: options.databaseUrl,
       application_name: 'usall-expansion-worker',
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 30_000,
+      query_timeout: 30_000,
+      statement_timeout: 30_000,
+      lock_timeout: 5_000,
       max: 4,
     });
     attachPostgresPoolErrorHandler(this.pool, { component: 'expansion-worker' });

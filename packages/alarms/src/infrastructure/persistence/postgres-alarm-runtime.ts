@@ -25,6 +25,9 @@ export class PostgresAlarmRuntime {
       application_name: 'usall-api',
       connectionTimeoutMillis: 3_000,
       idleTimeoutMillis: 30_000,
+      query_timeout: 5_000,
+      statement_timeout: 5_000,
+      lock_timeout: 5_000,
       max: 20,
     });
     attachPostgresPoolErrorHandler(this.pool, { component: 'alarm-api' });

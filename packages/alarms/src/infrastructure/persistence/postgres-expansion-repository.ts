@@ -13,6 +13,7 @@ import type {
 } from '../../application/expansion';
 import { expansionCursorHash } from './expansion-cursor-hash';
 import { attachPostgresClientErrorHandler } from './postgres-pool-observability';
+import { rollbackPostgresTransaction } from './postgres-transaction-cleanup';
 
 interface ClaimCandidateRow {
   readonly alarm_id: string;
@@ -463,21 +464,27 @@ export class PostgresExpansionRepository implements ExpansionRepository {
     const detachErrorHandler = attachPostgresClientErrorHandler(client, {
       component: 'expansion-repository',
     });
+    let reusable = false;
 
     try {
       await client.query('BEGIN');
       const result = await work(client);
       await client.query('COMMIT');
+      reusable = true;
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await rollbackPostgresTransaction(client);
       if (error instanceof PersistenceUnavailableError) {
         throw error;
       }
       throw new PersistenceUnavailableError(error);
     } finally {
-      client.release();
       detachErrorHandler();
+      if (reusable) {
+        client.release();
+      } else {
+        client.release(true);
+      }
     }
   }
 }
