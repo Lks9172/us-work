@@ -7,6 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DispatchProcessor } from '../../packages/alarms/src/application/dispatch';
 import type { RedisPacedRateLimiter } from '../../packages/alarms/src/infrastructure/limiter/redis-paced-rate-limiter';
 import { DispatchRuntime } from '../../packages/alarms/src/infrastructure/persistence/dispatch-runtime';
+import { ExpansionRuntime } from '../../packages/alarms/src/infrastructure/persistence/expansion-runtime';
+import { PostgresAlarmRuntime } from '../../packages/alarms/src/infrastructure/persistence/postgres-alarm-runtime';
+import { ReconciliationRuntime } from '../../packages/alarms/src/infrastructure/persistence/reconciliation-runtime';
 import { NodeProviderMessageSender } from '../../packages/alarms/src/infrastructure/provider/node-provider-message-sender';
 
 const providerRequest = {
@@ -93,6 +96,53 @@ describe('bounded production dispatch configuration', () => {
       expect(internals.sender.httpsAgent.maxSockets).toBe(64);
     } finally {
       await runtime.close();
+    }
+  });
+
+  it('OPS-15 bounds PostgreSQL waits by workload without cutting off 100k publication', async () => {
+    const alarm = new PostgresAlarmRuntime({
+      databaseUrl: 'postgresql://usall:usall@127.0.0.1:1/usall',
+      cursorSigningKey: 'runtime-capacity-contract-signing-key',
+    });
+    const expansion = new ExpansionRuntime({
+      databaseUrl: 'postgresql://usall:usall@127.0.0.1:1/usall',
+      providerBaseUrl: 'http://127.0.0.1:1',
+    });
+    const reconciliation = new ReconciliationRuntime({
+      databaseUrl: 'postgresql://usall:usall@127.0.0.1:1/usall',
+      providerBaseUrl: 'http://127.0.0.1:1',
+    });
+    const optionsOf = (runtime: object): Record<string, unknown> =>
+      (
+        runtime as unknown as {
+          readonly pool: Pool & { readonly options: Record<string, unknown> };
+        }
+      ).pool.options;
+
+    try {
+      expect(optionsOf(alarm)).toMatchObject({
+        max: 20,
+        connectionTimeoutMillis: 3_000,
+        query_timeout: 5_000,
+        statement_timeout: 5_000,
+        lock_timeout: 5_000,
+      });
+      expect(optionsOf(reconciliation)).toMatchObject({
+        max: 10,
+        connectionTimeoutMillis: 5_000,
+        query_timeout: 5_000,
+        statement_timeout: 5_000,
+        lock_timeout: 5_000,
+      });
+      expect(optionsOf(expansion)).toMatchObject({
+        max: 4,
+        connectionTimeoutMillis: 5_000,
+        query_timeout: 30_000,
+        statement_timeout: 30_000,
+        lock_timeout: 5_000,
+      });
+    } finally {
+      await Promise.all([alarm.close(), expansion.close(), reconciliation.close()]);
     }
   });
 });
